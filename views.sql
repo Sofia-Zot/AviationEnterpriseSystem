@@ -1,13 +1,3 @@
--- ============================================================
--- ПРЕДСТАВЛЕНИЯ (VIEWS) для 14 аналитических запросов
--- AviationEnterpriseSystem
--- Схема: PostgreSQL 17 (aircraft_plant_full.sql)
--- ============================================================
-
--- ------------------------------------------------------------
--- 1. Перечень видов изделий отдельной категории и в целом,
---    собираемых указанным цехом, предприятием.
--- ------------------------------------------------------------
 DROP VIEW IF EXISTS view_product_types_by_shop CASCADE;
 
 CREATE VIEW view_product_types_by_shop AS
@@ -27,10 +17,6 @@ COMMENT ON VIEW view_product_types_by_shop IS
 'Виды изделий по цехам и категориям. Фильтрация в клиенте: WHERE id_shop = N [AND id_category = M].';
 
 
--- ------------------------------------------------------------
--- 2. Число и перечень изделий, собранных указанным цехом,
---    участком, предприятием за период.
--- ------------------------------------------------------------
 -- Для каждого готового изделия ровно одна строка.
 -- completion_date = максимальная дата из всех этапов work_execution.
 DROP VIEW IF EXISTS view_completed_products CASCADE;
@@ -62,9 +48,7 @@ COMMENT ON VIEW view_completed_products IS
 'Изделия со статусом ready (одна строка на изделие, completion_date = MAX(end_date)). Фильтрация в клиенте: WHERE id_shop = N AND completion_date BETWEEN ... AND ... [AND id_category = M].';
 
 
--- ------------------------------------------------------------
--- 3a. Кадровый состав: рабочие
--- ------------------------------------------------------------
+
 DROP VIEW IF EXISTS view_workers CASCADE;
 
 CREATE VIEW view_workers AS
@@ -92,9 +76,7 @@ COMMENT ON VIEW view_workers IS
 'Кадровый состав рабочих. Фильтрация в клиенте: WHERE id_shop = N [AND id_section = M].';
 
 
--- ------------------------------------------------------------
--- 3b. Кадровый состав: ИТР (инженеры)
--- ------------------------------------------------------------
+
 DROP VIEW IF EXISTS view_engineers CASCADE;
 
 CREATE VIEW view_engineers AS
@@ -112,9 +94,7 @@ COMMENT ON VIEW view_engineers IS
 'Кадровый состав ИТР. Фильтрация в клиенте: WHERE position LIKE ...';
 
 
--- ------------------------------------------------------------
--- 4. Участки указанного цеха и их начальники.
--- ------------------------------------------------------------
+
 -- Требуется поле section.id_manager (INT, FK → engineer(id_employee), UNIQUE).
 -- См. скрипт fix_section_and_views.sql для ALTER TABLE.
 DROP VIEW IF EXISTS view_sections_with_managers CASCADE;
@@ -139,9 +119,6 @@ COMMENT ON VIEW view_sections_with_managers IS
 'Участки цехов и их начальники (через section.id_manager → engineer). Фильтрация в клиенте: WHERE id_shop = N.';
 
 
--- ------------------------------------------------------------
--- 5. Перечень работ для указанного изделия.
--- ------------------------------------------------------------
 DROP VIEW IF EXISTS view_product_work_steps CASCADE;
 
 CREATE VIEW view_product_work_steps AS
@@ -164,10 +141,6 @@ LEFT JOIN section sec ON swl.id_section = sec.id_section;
 COMMENT ON VIEW view_product_work_steps IS
 'Перечень работ (этапов сборки) для каждого изделия. Фильтрация в клиенте: WHERE serial_number = N ORDER BY step_number.';
 
-
--- ------------------------------------------------------------
--- 6. Состав бригад указанного участка, цеха.
--- ------------------------------------------------------------
 DROP VIEW IF EXISTS view_brigade_members CASCADE;
 
 CREATE VIEW view_brigade_members AS
@@ -195,9 +168,6 @@ COMMENT ON VIEW view_brigade_members IS
 'Состав бригад (рабочие). Фильтрация в клиенте: WHERE id_shop = N [AND id_section = M].';
 
 
--- ------------------------------------------------------------
--- 7. Список мастеров указанного участка, цеха.
--- ------------------------------------------------------------
 DROP VIEW IF EXISTS view_masters CASCADE;
 
 CREATE VIEW view_masters AS
@@ -216,9 +186,6 @@ COMMENT ON VIEW view_masters IS
 'Список мастеров (engineer с position = Master). Фильтрация в клиенте: по цеху/участку через дополнительные JOIN в запросе.';
 
 
--- ------------------------------------------------------------
--- 8. Перечень изделий в сборке в настоящий момент.
--- ------------------------------------------------------------
 DROP VIEW IF EXISTS view_products_in_assembly CASCADE;
 
 CREATE VIEW view_products_in_assembly AS
@@ -240,9 +207,6 @@ COMMENT ON VIEW view_products_in_assembly IS
 'Изделия, находящиеся в сборке (status = in_assembly). Фильтрация в клиенте: WHERE id_shop = N [AND id_category = M].';
 
 
--- ------------------------------------------------------------
--- 9. Состав бригад, участвующих в сборке указанного изделия.
--- ------------------------------------------------------------
 -- Связь: work_execution → work_step → section_work_list → section → brigade
 DROP VIEW IF EXISTS view_brigades_for_product CASCADE;
 
@@ -272,9 +236,6 @@ COMMENT ON VIEW view_brigades_for_product IS
 'Бригады и их состав, участвующие в сборке изделия (через участок работ). Фильтрация в клиенте: WHERE serial_number = N.';
 
 
--- ------------------------------------------------------------
--- 10. Лаборатории, участвующие в испытаниях изделия.
--- ------------------------------------------------------------
 -- Связь: test_execution → test_step → test_work_list → equipment → laboratory
 DROP VIEW IF EXISTS view_labs_for_product CASCADE;
 
@@ -295,9 +256,6 @@ COMMENT ON VIEW view_labs_for_product IS
 'Лаборатории, участвующие в испытаниях изделия. Фильтрация в клиенте: WHERE serial_number = N.';
 
 
--- ------------------------------------------------------------
--- 11. Изделия, проходившие испытание в лаборатории за период.
--- ------------------------------------------------------------
 DROP VIEW IF EXISTS view_tested_products CASCADE;
 
 CREATE VIEW view_tested_products AS
@@ -324,10 +282,6 @@ COMMENT ON VIEW view_tested_products IS
 'Изделия, прошедшие испытания (result = passed). Фильтрация в клиенте: WHERE id_lab = N AND test_date BETWEEN ... AND ... [AND id_category = M].';
 
 
--- ------------------------------------------------------------
--- 12. Испытатели, участвовавшие в испытаниях изделия /
---     изделий категории / в лаборатории.
--- ------------------------------------------------------------
 -- Связь: tester → tester_equipment → equipment → test_work_list → test_step → test_execution
 DROP VIEW IF EXISTS view_testers CASCADE;
 
@@ -359,9 +313,6 @@ COMMENT ON VIEW view_testers IS
 'Испытатели и их участие в испытаниях. Фильтрация в клиенте: WHERE serial_number = N OR id_category = M OR id_lab = K.';
 
 
--- ------------------------------------------------------------
--- 13. Оборудование, использованное при испытании.
--- ------------------------------------------------------------
 DROP VIEW IF EXISTS view_equipment_for_tests CASCADE;
 
 CREATE VIEW view_equipment_for_tests AS
@@ -383,10 +334,6 @@ COMMENT ON VIEW view_equipment_for_tests IS
 'Оборудование, использованное при испытаниях изделий. Фильтрация в клиенте: WHERE serial_number = N [AND id_lab = M].';
 
 
--- ------------------------------------------------------------
--- 14. Число и перечень изделий в сборке (группировка
---     по цеху/участку/категории).
--- ------------------------------------------------------------
 DROP VIEW IF EXISTS view_products_in_assembly_summary CASCADE;
 
 CREATE VIEW view_products_in_assembly_summary AS
