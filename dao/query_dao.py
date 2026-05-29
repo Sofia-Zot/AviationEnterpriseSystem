@@ -291,13 +291,20 @@ class QueryDAO:
                 cur.execute(
                     """
                     SELECT DISTINCT
-                        brigade_name,
-                        section_name,
-                        last_name || ' ' || first_name || ' ' || COALESCE(middle_name, '') AS fio,
-                        profession
-                    FROM view_brigades_for_product
-                    WHERE serial_number = %s
-                    ORDER BY brigade_name, last_name
+                        b.name AS brigade_name,
+                        sec.name AS section_name,
+                        e.last_name || ' ' || e.first_name || ' ' || COALESCE(e.middle_name, '') AS fio,
+                        w.profession
+                    FROM product_instance pi
+                    JOIN work_execution we ON we.serial_number = pi.serial_number
+                    JOIN work_step ws ON we.id_step = ws.id_step
+                    JOIN section_work_list swl ON ws.id_work = swl.id_work
+                    JOIN section sec ON swl.id_section = sec.id_section
+                    JOIN brigade b ON b.id_section = sec.id_section
+                    JOIN worker w ON w.id_brigade = b.id_brigade
+                    JOIN employee e ON w.id_employee = e.id_employee
+                    WHERE pi.serial_number = %s
+                    ORDER BY b.name, e.last_name
                     """,
                     (serial_number,),
                 )
@@ -384,15 +391,24 @@ class QueryDAO:
                 cur.execute(
                     """
                     SELECT DISTINCT
-                        last_name || ' ' || first_name || ' ' || COALESCE(middle_name, '') AS fio,
-                        specialization
-                    FROM view_testers
-                    WHERE (serial_number = %s OR %s IS NULL)
-                      AND (id_category = %s OR %s IS NULL)
-                      AND (id_lab = %s OR %s IS NULL)
-                      AND (test_date >= %s OR %s IS NULL)
-                      AND (test_date <= %s OR %s IS NULL)
-                    ORDER BY last_name, first_name
+                        e.last_name || ' ' || e.first_name || ' ' || COALESCE(e.middle_name, '') AS fio,
+                        t.specialization
+                    FROM employee e
+                    JOIN tester t ON e.id_employee = t.id_employee
+                    JOIN tester_equipment teq ON t.id_employee = teq.id_tester
+                    JOIN equipment eq ON teq.id_equipment = eq.id_equipment
+                    JOIN test_work_list twl ON eq.id_equipment = twl.id_equipment
+                    JOIN test_step ts ON twl.id_test_work = ts.id_test_work
+                    JOIN test_execution te ON ts.id_step = te.id_test_step
+                    JOIN product_instance pi ON te.serial_number = pi.serial_number
+                    JOIN product_type pt ON pi.id_type = pt.id_type
+                    JOIN product_category pc ON pt.id_category = pc.id_category
+                    WHERE (te.serial_number = %s OR %s IS NULL)
+                      AND (pt.id_category = %s OR %s IS NULL)
+                      AND (eq.id_lab = %s OR %s IS NULL)
+                      AND (te.end_date >= %s OR %s IS NULL)
+                      AND (te.end_date <= %s OR %s IS NULL)
+                    ORDER BY fio
                     """,
                     (serial_number, serial_number, category_id, category_id,
                      lab_id, lab_id, start_date, start_date,
