@@ -12,6 +12,7 @@ from dao.worker_dao import WorkerDAO
 from dao.engineer_dao import EngineerDAO
 from dao.tester_dao import TesterDAO
 from dao.brigade_dao import BrigadeDAO
+from services.auth_service import AuthService
 from gui.forms.base_form import BaseForm
 from models.employee import Employee
 
@@ -27,6 +28,7 @@ class EmployeeForm(BaseForm):
         self.worker_dao = WorkerDAO()
         self.engineer_dao = EngineerDAO()
         self.tester_dao = TesterDAO()
+        self.auth_service = AuthService(self._get_db())
 
         self._entity = None
         self._current_type = "worker"
@@ -39,6 +41,11 @@ class EmployeeForm(BaseForm):
 
         if self.employee_id:
             self._load_entity()
+
+    def _get_db(self):
+        """Возвращает подключение к БД."""
+        from db.connection import DatabaseConnection
+        return DatabaseConnection()
 
     def _setup_ui(self):
         """Настраивает интерфейс."""
@@ -108,6 +115,27 @@ class EmployeeForm(BaseForm):
         self.general_layout.addRow(self.lbl_address, self.ed_address)
         self.general_layout.addRow(self.lbl_phone, self.ed_phone)
         self.general_layout.addRow(self.lbl_salary, self.ed_salary)
+
+        # --- Учётные данные ---
+        self.lbl_login = QLabel("Логин")
+        self.lbl_password = QLabel("Пароль")
+        self.lbl_role = QLabel("Роль")
+
+        self.ed_login = QLineEdit()
+        self.ed_login.setPlaceholderText("Оставьте пустым, если доступ не нужен")
+        self.ed_password = QLineEdit()
+        self.ed_password.setEchoMode(QLineEdit.Password)
+        self.ed_password.setPlaceholderText("При редактировании: оставьте пустым, чтобы не менять")
+        self.cb_role = QComboBox()
+        self.cb_role.addItem("— не выбрано —", "")
+        for role in ["admin", "hr_manager", "master", "foreman", "tester", "technologist", "analyst"]:
+            self.cb_role.addItem(role, role)
+
+        self.general_layout.addRow(QLabel(""))  # отступ
+        self.general_layout.addRow(QLabel("<b>Учётные данные для входа в систему</b>"))
+        self.general_layout.addRow(self.lbl_login, self.ed_login)
+        self.general_layout.addRow(self.lbl_password, self.ed_password)
+        self.general_layout.addRow(self.lbl_role, self.cb_role)
 
         general_group.setLayout(self.general_layout)
         layout.addWidget(general_group)
@@ -283,6 +311,78 @@ class EmployeeForm(BaseForm):
 
         return True
 
+    def _save_user_account(self):
+        """
+        Создаёт или обновляет учётную запись пользователя.
+        Возвращает (success: bool, message: str, is_new: bool).
+        """
+        login = self.ed_login.text().strip()
+        password = self.ed_password.text()
+        role = self.cb_role.currentData()
+
+        if not login:
+            return True, "", False  # Логин не указан — пропускаем
+
+        if not role:
+            QMessageBox.warning(self, "Ошибка", "Выберите роль для учётной записи")
+            return False, "", False
+
+        if not password and not self.employee_id:
+            QMessageBox.warning(self, "Ошибка", "Введите пароль для новой учётной записи")
+            return False, "", False
+
+        # Проверяем, существует ли пользователь
+        existing_user = self.auth_service.get_user_by_login(login)
+
+        if existing_user:
+            # Обновление существующего пользователя
+            if self.employee_id and existing_user.id_employee != self.employee_id:
+                QMessageBox.warning(
+                    self, "Ошибка",
+                    f"Логин '{login}' уже занят другим сотрудником"
+                )
+                return False, "", False
+
+            # Обновляем пароль, если указан
+            if password:
+                self.auth_service.change_password(login, password)
+
+            # Обновляем роль
+            db = self._get_db()
+            conn = db.get_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE users SET role = %s WHERE login = %s",
+                        (role, login)
+                    )
+                conn.commit()
+            except Exception as e:
+                logger.exception("Ошибка при обновлении роли")
+                conn.rollback()
+                return False, str(e), False
+            finally:
+                db.return_connection(conn)
+
+            return True, f"Учётная запись обновлена: логин = {login}, роль = {role}", False
+        else:
+            # Создание нового пользователя
+            if not password:
+                QMessageBox.warning(self, "Ошибка", "Введите пароль для новой учётной записи")
+                return False, "", False
+
+            success = self.auth_service.create_user(
+                login=login,
+                password=password,
+                role=role,
+                id_employee=self.employee_id
+            )
+            if success:
+                return True, f"Учётная запись создана: логин = {login}, роль = {role}", True
+            else:
+                QMessageBox.warning(self, "Ошибка", "Не удалось создать учётную запись")
+                return False, "", False
+
     def save_entity(self):
         """Сохраняет сотрудника."""
         from db.connection import DatabaseConnection
@@ -386,6 +486,15 @@ class EmployeeForm(BaseForm):
                 )
                 self.tester_dao.insert(tester)
 
+        # --- Сохраняем учётные данные ---
+        login = self.ed_login.text().strip()
+        if login:
+            success, message, is_new = self._save_user_account()
+            if not success:
+                raise Exception(message or "Ошибка при сохранении учётной записи")
+            if message:
+                QMessageBox.information(self, "Учётная запись", message)
+
     def load_entity(self):
         """Загружает сотрудника в форму."""
         if not self.employee_id:
@@ -409,6 +518,26 @@ class EmployeeForm(BaseForm):
         self.ed_phone.setText(entity.phone or "")
         if entity.salary:
             self.ed_salary.setText(str(entity.salary))
+
+        # Загружаем учётные данные
+        try:
+            db = self._get_db()
+            conn = db.get_connection()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT login, role FROM users WHERE id_employee = %s",
+                    (self.employee_id,)
+                )
+                row = cur.fetchone()
+                if row:
+                    self.ed_login.setText(row[0])
+                    for i in range(self.cb_role.count()):
+                        if self.cb_role.itemData(i) == row[1]:
+                            self.cb_role.setCurrentIndex(i)
+                            break
+            db.return_connection(conn)
+        except Exception as e:
+            logger.exception("Ошибка при загрузке учётных данных")
 
         # Загружаем специфичные данные
         try:

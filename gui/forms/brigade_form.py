@@ -112,9 +112,11 @@ class BrigadeForm(BaseForm):
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT e.id_employee, e.last_name, e.first_name, w.is_foreman
+                        SELECT e.id_employee, e.last_name, e.first_name,
+                               w.is_foreman, b.id_foreman
                         FROM worker w
                         JOIN employee e ON w.id_employee = e.id_employee
+                        LEFT JOIN brigade b ON b.id_brigade = w.id_brigade
                         WHERE w.id_brigade = %s
                         ORDER BY e.last_name, e.first_name
                         """,
@@ -122,7 +124,9 @@ class BrigadeForm(BaseForm):
                     )
                     rows = cur.fetchall()
                     for row in rows:
-                        foreman_mark = " (бригадир)" if row[3] else ""
+                        # Бригадир только если is_foreman=TRUE И id_employee = id_foreman бригады
+                        is_real_foreman = row[3] and row[4] == row[0]
+                        foreman_mark = " (бригадир)" if is_real_foreman else ""
                         self.cb_foreman.addItem(
                             f"{row[1]} {row[2]}{foreman_mark}",
                             row[0]
@@ -188,38 +192,35 @@ class BrigadeForm(BaseForm):
                         "Сначала переведите рабочего в эту бригаду через форму сотрудника."
                     )
 
-            # Обновляем бригаду
             entity.name = self.ed_name.text().strip()
             entity.id_section = self.cb_section.currentData()
-            entity.id_foreman = new_foreman_id
 
             db = DatabaseConnection()
             conn = db.get_connection()
             try:
                 with conn.cursor() as cur:
-                    # Сбрасываем старого бригадира
+                    # 1. Сначала обновляем worker (чтобы триггер brigade потом не ругался)
                     if old_foreman_id and old_foreman_id != new_foreman_id:
                         cur.execute(
                             "UPDATE worker SET is_foreman = FALSE WHERE id_employee = %s",
                             (old_foreman_id,)
                         )
 
-                    # Обновляем бригаду
+                    if new_foreman_id:
+                        cur.execute(
+                            "UPDATE worker SET is_foreman = TRUE WHERE id_employee = %s",
+                            (new_foreman_id,)
+                        )
+
+                    # 2. Потом обновляем бригаду (триггер проверит is_foreman = TRUE)
                     cur.execute(
                         """
                         UPDATE brigade
                         SET name = %s, id_section = %s, id_foreman = %s
                         WHERE id_brigade = %s
                         """,
-                        (entity.name, entity.id_section, entity.id_foreman, self.brigade_id)
+                        (entity.name, entity.id_section, new_foreman_id, self.brigade_id)
                     )
-
-                    # Устанавливаем нового бригадира
-                    if new_foreman_id:
-                        cur.execute(
-                            "UPDATE worker SET is_foreman = TRUE WHERE id_employee = %s",
-                            (new_foreman_id,)
-                        )
 
                 conn.commit()
             except psycopg2.Error as e:
@@ -243,27 +244,27 @@ class BrigadeForm(BaseForm):
             entity = Brigade(
                 name=self.ed_name.text().strip(),
                 id_section=self.cb_section.currentData(),
-                id_foreman=None  # Пока не назначаем - нужен id_brigade
+                id_foreman=None
             )
 
             db = DatabaseConnection()
             conn = db.get_connection()
             try:
                 with conn.cursor() as cur:
+                    # 1. Создаём бригаду без бригадира
                     cur.execute(
                         """
                         INSERT INTO brigade (name, id_section, id_foreman)
-                        VALUES (%s, %s, %s)
+                        VALUES (%s, %s, NULL)
                         RETURNING id_brigade
                         """,
-                        (entity.name, entity.id_section, None)
+                        (entity.name, entity.id_section)
                     )
                     row = cur.fetchone()
                     new_brigade_id = row[0]
 
-                    # Если выбран бригадир - проверяем и назначаем
+                    # 2. Если выбран бригадир - обновляем worker
                     if new_foreman_id:
-                        # Проверяем, что рабочий существует
                         cur.execute(
                             "SELECT id_brigade FROM worker WHERE id_employee = %s",
                             (new_foreman_id,)
@@ -274,7 +275,7 @@ class BrigadeForm(BaseForm):
                             conn.rollback()
                             raise Exception("Выбранный сотрудник не является рабочим.")
 
-                        # Обновляем рабочего
+                        # Обновляем рабочего: is_foreman = TRUE и id_brigade
                         cur.execute(
                             """
                             UPDATE worker
@@ -284,7 +285,7 @@ class BrigadeForm(BaseForm):
                             (new_brigade_id, new_foreman_id)
                         )
 
-                        # Обновляем бригаду
+                        # 3. Обновляем бригаду с id_foreman
                         cur.execute(
                             "UPDATE brigade SET id_foreman = %s WHERE id_brigade = %s",
                             (new_foreman_id, new_brigade_id)
