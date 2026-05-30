@@ -16,7 +16,7 @@ class QueryDAO:
 
     def query1_product_types(
         self, shop_id: Optional[int] = None, category_id: Optional[int] = None
-    ) -> List[str]:
+    ) -> List[Tuple]:
         conn = None
         try:
             conn = self.db.get_connection()
@@ -26,26 +26,14 @@ class QueryDAO:
                     SELECT DISTINCT pt.name AS product_type_name
                     FROM product_type pt
                     JOIN product_category pc ON pt.id_category = pc.id_category
-                    WHERE pt.id_type IN (
-                        SELECT id_type FROM aircraft_instance WHERE id_shop = %s
-                        UNION
-                        SELECT id_type FROM rocket_instance WHERE id_shop = %s
-                        UNION
-                        SELECT id_type FROM glider_instance WHERE id_shop = %s
-                        UNION
-                        SELECT id_type FROM helicopter_instance WHERE id_shop = %s
-                        UNION
-                        SELECT id_type FROM hangglider_instance WHERE id_shop = %s
-                        UNION
-                        SELECT id_type FROM other_instance WHERE id_shop = %s
-                    )
-                    AND (pt.id_category = %s OR %s IS NULL)
+                    JOIN product_instance pi ON pi.id_type = pt.id_type
+                    WHERE (pi.id_shop = %s OR %s IS NULL)
+                      AND (pt.id_category = %s OR %s IS NULL)
                     ORDER BY pt.name
                     """,
-                    (shop_id, shop_id, shop_id, shop_id, shop_id, shop_id,
-                     category_id, category_id),
+                    (shop_id, shop_id, category_id, category_id),
                 )
-                return [(row[0],) for row in cur.fetchall()]
+                return cur.fetchall()
         except psycopg2.Error as e:
             print(f"Ошибка в query1_product_types: {e}")
             return []
@@ -290,7 +278,7 @@ class QueryDAO:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT DISTINCT
+                    SELECT
                         b.name AS brigade_name,
                         sec.name AS section_name,
                         e.last_name || ' ' || e.first_name || ' ' || COALESCE(e.middle_name, '') AS fio,
@@ -304,6 +292,7 @@ class QueryDAO:
                     JOIN worker w ON w.id_brigade = b.id_brigade
                     JOIN employee e ON w.id_employee = e.id_employee
                     WHERE pi.serial_number = %s
+                    GROUP BY b.name, sec.name, e.last_name, e.first_name, e.middle_name, w.profession
                     ORDER BY b.name, e.last_name
                     """,
                     (serial_number,),

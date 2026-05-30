@@ -18,6 +18,7 @@ class Employee:
         address: Optional[str] = None,
         phone: Optional[str] = None,
         salary: Optional[float] = None,
+        other_info: Optional[str] = None,
     ):
         self.id_employee = id_employee
         self.last_name = last_name
@@ -30,6 +31,7 @@ class Employee:
         self.address = address
         self.phone = phone
         self.salary = salary
+        self.other_info = other_info
 
     def __repr__(self) -> str:
         return f"Employee(id={self.id_employee}, {self.last_name} {self.first_name})"

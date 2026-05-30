@@ -15,7 +15,7 @@ class EmployeeDAO(BaseDAO[Employee]):
                     """
                     SELECT id_employee, last_name, first_name, middle_name,
                            birth_date, education, hire_date, prior_exp,
-                           address, phone, salary
+                           address, phone, salary, other_info
                     FROM employee
                     ORDER BY id_employee
                     """
@@ -35,6 +35,7 @@ class EmployeeDAO(BaseDAO[Employee]):
                         address=row[8],
                         phone=row[9],
                         salary=row[10],
+                        other_info=row[11],
                     ))
                 return result
         except psycopg2.Error as e:
@@ -53,7 +54,7 @@ class EmployeeDAO(BaseDAO[Employee]):
                     """
                     SELECT id_employee, last_name, first_name, middle_name,
                            birth_date, education, hire_date, prior_exp,
-                           address, phone, salary
+                           address, phone, salary, other_info
                     FROM employee
                     WHERE id_employee = %s
                     """,
@@ -74,6 +75,7 @@ class EmployeeDAO(BaseDAO[Employee]):
                     address=row[8],
                     phone=row[9],
                     salary=row[10],
+                    other_info=row[11],
                 )
         except psycopg2.Error as e:
             print(f"Ошибка при получении сотрудника по ID: {e}")
@@ -91,9 +93,9 @@ class EmployeeDAO(BaseDAO[Employee]):
                     """
                     INSERT INTO employee (
                         last_name, first_name, middle_name, birth_date,
-                        education, hire_date, prior_exp, address, phone, salary
+                        education, hire_date, prior_exp, address, phone, salary, other_info
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id_employee
                     """,
                     (
@@ -107,6 +109,7 @@ class EmployeeDAO(BaseDAO[Employee]):
                         entity.address,
                         entity.phone,
                         entity.salary,
+                        entity.other_info,
                     ),
                 )
                 row = cur.fetchone()
@@ -133,7 +136,8 @@ class EmployeeDAO(BaseDAO[Employee]):
                     UPDATE employee
                     SET last_name = %s, first_name = %s, middle_name = %s,
                         birth_date = %s, education = %s, hire_date = %s,
-                        prior_exp = %s, address = %s, phone = %s, salary = %s
+                        prior_exp = %s, address = %s, phone = %s, salary = %s,
+                        other_info = %s
                     WHERE id_employee = %s
                     """,
                     (
@@ -147,6 +151,7 @@ class EmployeeDAO(BaseDAO[Employee]):
                         entity.address,
                         entity.phone,
                         entity.salary,
+                        entity.other_info,
                         entity.id_employee,
                     ),
                 )

@@ -59,19 +59,23 @@ class EmployeeForm(BaseForm):
         self.rb_worker = QRadioButton("Рабочий")
         self.rb_engineer = QRadioButton("Инженер (ИТР)")
         self.rb_tester = QRadioButton("Испытатель")
+        self.rb_other = QRadioButton("Другое (внесистемный)")
 
         self.rb_worker.setChecked(True)
         self.rb_worker.toggled.connect(self._on_type_change)
         self.rb_engineer.toggled.connect(self._on_type_change)
         self.rb_tester.toggled.connect(self._on_type_change)
+        self.rb_other.toggled.connect(self._on_type_change)
 
         self.type_group.addButton(self.rb_worker, 1)
         self.type_group.addButton(self.rb_engineer, 2)
         self.type_group.addButton(self.rb_tester, 3)
+        self.type_group.addButton(self.rb_other, 4)
 
         type_layout.addWidget(self.rb_worker)
         type_layout.addWidget(self.rb_engineer)
         type_layout.addWidget(self.rb_tester)
+        type_layout.addWidget(self.rb_other)
         type_group.setLayout(type_layout)
         layout.addWidget(type_group)
 
@@ -193,6 +197,18 @@ class EmployeeForm(BaseForm):
         self.tester_group.setLayout(tester_layout)
         layout.addWidget(self.tester_group)
 
+        # Специфичные поля для внесистемных сотрудников
+        self.other_group = QGroupBox("Данные внесистемного сотрудника")
+        other_layout = QFormLayout()
+
+        self.lbl_other_info = QLabel("Должность / статус *")
+        self.ed_other_info = QLineEdit()
+
+        other_layout.addRow(self.lbl_other_info, self.ed_other_info)
+
+        self.other_group.setLayout(other_layout)
+        layout.addWidget(self.other_group)
+
         # По умолчанию показываем только рабочего
         self._on_type_change()
 
@@ -263,16 +279,25 @@ class EmployeeForm(BaseForm):
             self.worker_group.setVisible(True)
             self.engineer_group.setVisible(False)
             self.tester_group.setVisible(False)
+            self.other_group.setVisible(False)
         elif self.rb_engineer.isChecked():
             self._current_type = "engineer"
             self.worker_group.setVisible(False)
             self.engineer_group.setVisible(True)
             self.tester_group.setVisible(False)
-        else:
+            self.other_group.setVisible(False)
+        elif self.rb_tester.isChecked():
             self._current_type = "tester"
             self.worker_group.setVisible(False)
             self.engineer_group.setVisible(False)
             self.tester_group.setVisible(True)
+            self.other_group.setVisible(False)
+        else:
+            self._current_type = "other"
+            self.worker_group.setVisible(False)
+            self.engineer_group.setVisible(False)
+            self.tester_group.setVisible(False)
+            self.other_group.setVisible(True)
 
     def validate(self) -> bool:
         """Валидация данных."""
@@ -307,6 +332,11 @@ class EmployeeForm(BaseForm):
         elif self._current_type == "tester":
             if not self.ed_specialization.text().strip():
                 QMessageBox.warning(self, "Ошибка", "Введите специализацию")
+                return False
+
+        elif self._current_type == "other":
+            if not self.ed_other_info.text().strip():
+                QMessageBox.warning(self, "Ошибка", "Введите должность / статус")
                 return False
 
         return True
@@ -405,12 +435,21 @@ class EmployeeForm(BaseForm):
         entity.address = self.ed_address.text().strip()
         entity.phone = self.ed_phone.text().strip()
         entity.salary = float(self.ed_salary.text()) if self.ed_salary.text() else None
+        entity.other_info = self.ed_other_info.text().strip() if self._current_type == "other" else None
 
         if self.employee_id:
             self.employee_dao.update(entity)
         else:
             self.employee_dao.insert(entity)
             self.employee_id = entity.id_employee
+
+        # Удаляем записи из подтипов, если тип изменился
+        if self._current_type != "worker":
+            self.worker_dao.delete(self.employee_id)
+        if self._current_type != "engineer":
+            self.engineer_dao.delete(self.employee_id)
+        if self._current_type != "tester":
+            self.tester_dao.delete(self.employee_id)
 
         # Сохраняем специфичные данные
         if self._current_type == "worker":
@@ -486,6 +525,10 @@ class EmployeeForm(BaseForm):
                 )
                 self.tester_dao.insert(tester)
 
+        elif self._current_type == "other":
+            # Для внесистемных сотрудников данные уже сохранены в employee.other_info
+            pass
+
         # --- Сохраняем учётные данные ---
         login = self.ed_login.text().strip()
         if login:
@@ -518,6 +561,7 @@ class EmployeeForm(BaseForm):
         self.ed_phone.setText(entity.phone or "")
         if entity.salary:
             self.ed_salary.setText(str(entity.salary))
+        self.ed_other_info.setText(entity.other_info or "")
 
         # Загружаем учётные данные
         try:
@@ -586,3 +630,14 @@ class EmployeeForm(BaseForm):
                 return
         except:
             pass
+
+        # Если не найдено в worker/engineer/tester, проверяем other_info
+        if entity.other_info:
+            self.rb_other.setChecked(True)
+            self.ed_other_info.setText(entity.other_info)
+            self._on_type_change()
+        else:
+            # По умолчанию оставляем рабочего
+            self.rb_worker.setChecked(True)
+            self._on_type_change()
+
